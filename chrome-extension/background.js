@@ -1,7 +1,5 @@
 // Background service worker for phishing detection
-
-// API client functions
-const DEFAULT_API_URL = 'http://localhost:3000/api/check-url';
+importScripts('config.js');
 
 async function getApiUrl() {
   const result = await chrome.storage.sync.get(['apiUrl']);
@@ -226,6 +224,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 
   // Skip extension pages and chrome:// URLs
   if (url.startsWith('chrome-extension://') || url.startsWith('chrome://') || url.startsWith('moz-extension://')) {
+    return;
+  }
+
+  // Skip the API server itself
+  if (url.startsWith(DEFAULT_API_BASE_URL)) {
     return;
   }
 
@@ -467,7 +470,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'getApiUrl') {
     chrome.storage.sync.get(['apiUrl'], (result) => {
-      sendResponse({ apiUrl: result.apiUrl || 'http://localhost:3000/api/check-url' });
+      sendResponse({ apiUrl: result.apiUrl || DEFAULT_API_URL });
     });
     return true;
   }

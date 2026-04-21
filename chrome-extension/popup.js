@@ -28,8 +28,6 @@
   const registerError = document.getElementById('registerError');
   const userEmail = document.getElementById('userEmail');
 
-  const DEFAULT_API_URL = 'http://localhost:3000/api/check-url';
-
   // Check auth state on load
   async function checkAuthState() {
     // Wait for auth.js to load

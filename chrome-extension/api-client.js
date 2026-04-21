@@ -1,6 +1,4 @@
 // API client for communicating with the backend
-const DEFAULT_API_URL = 'http://localhost:3000/api/check-url';
-
 /**
  * Gets the configured API URL from storage, or uses default
  */

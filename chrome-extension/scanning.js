@@ -3,8 +3,6 @@
 (async function() {
   'use strict';
 
-  const DEFAULT_API_URL = 'http://localhost:3000/api/check-url';
-
   async function getApiUrl() {
     return new Promise((resolve) => {
       chrome.storage.sync.get(['apiUrl'], (result) => {

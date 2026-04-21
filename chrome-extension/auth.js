@@ -1,13 +1,11 @@
 // Authentication utilities for Chrome Extension
 
-const DEFAULT_API_URL = 'http://localhost:3000';
-
 /**
  * Get the API base URL from storage
  */
 async function getApiUrl() {
   const result = await chrome.storage.sync.get(['apiUrl']);
-  return result.apiUrl || DEFAULT_API_URL;
+  return result.apiUrl || DEFAULT_API_BASE_URL;
 }
 
 /**
