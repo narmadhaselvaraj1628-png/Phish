@@ -4,8 +4,7 @@
  * Get the API base URL from storage
  */
 async function getApiUrl() {
-  const result = await chrome.storage.sync.get(['apiUrl']);
-  return result.apiUrl || DEFAULT_API_BASE_URL;
+  return getServerBaseUrl();
 }
 
 /**

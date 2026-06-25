@@ -205,6 +205,31 @@
       font-weight: 500;
       color: #065f46;
     }
+    .server-current {
+      font-weight: 500;
+      color: #065f46;
+      word-break: break-all;
+    }
+    .server-field {
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .server-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    .server-field input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
     .hidden {
       display: none;
     }
@@ -218,6 +243,11 @@
   <div class="auth-section" id="authSection">
     <!-- Not Logged In View -->
     <div id="notLoggedInView">
+      <div class="server-field">
+        <label class="server-label" for="serverUrlInput">Server URL</label>
+        <input type="url" id="serverUrlInput" placeholder="http://your-server:3000" />
+        <div id="serverUrlError" class="auth-error hidden"></div>
+      </div>
       <div id="authTabs" class="auth-tabs">
         <div class="auth-tab active" data-tab="login">Login</div>
         <div class="auth-tab" data-tab="register">Register</div>
@@ -245,6 +275,10 @@
       <div class="user-info">
         Logged in as: <span class="user-email" id="userEmail"></span>
       </div>
+      <div class="user-info">
+        Server: <span class="server-current" id="currentServer"></span>
+      </div>
+      <button id="changeServerBtn" class="btn btn-secondary">Change Server</button>
       <button id="logoutBtn" class="btn btn-secondary">Logout</button>
     </div>
   </div>

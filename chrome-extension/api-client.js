@@ -3,8 +3,7 @@
  * Gets the configured API URL from storage, or uses default
  */
 async function getApiUrl() {
-  const result = await chrome.storage.sync.get(['apiUrl']);
-  return result.apiUrl || DEFAULT_API_URL;
+  return getCheckUrlEndpoint();
 }
 
 /**

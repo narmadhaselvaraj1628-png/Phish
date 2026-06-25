@@ -2,8 +2,7 @@
 importScripts('config.js');
 
 async function getApiUrl() {
-  const result = await chrome.storage.sync.get(['apiUrl']);
-  return result.apiUrl || DEFAULT_API_URL;
+  return getCheckUrlEndpoint();
 }
 
 async function getAuthToken() {
@@ -227,8 +226,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     return;
   }
 
-  // Skip the API server itself
-  if (url.startsWith(DEFAULT_API_BASE_URL)) {
+  // Skip the configured API server itself (and all of its sub-routes)
+  const serverBase = await getServerBaseUrl();
+  if (url.startsWith(serverBase)) {
     return;
   }
 
@@ -319,125 +319,11 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     return;
   }
 
-  // Not in memory cache - check DB cache via API before redirecting to scanning page
-  console.log('[background] Not in memory cache, checking DB cache...');
-  try {
-    // Get auth token (required)
-    const token = await getAuthToken();
-    if (!token) {
-      console.log('[background] User not logged in, skipping DB cache check');
-      // Fail open - allow navigation if not logged in
-      redirectedTabs.delete(tabId);
-      return;
-    }
-
-    const apiUrl = await getApiUrl();
-    const dbCheckResponse = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`, // Required
-      },
-      body: JSON.stringify({ url: baseDomain, checkOnly: true }),
-    });
-
-    if (dbCheckResponse.ok) {
-      const dbResult = await dbCheckResponse.json();
-      
-      if (dbResult.notFound) {
-        // Not in DB cache, redirect to scanning page to trigger AI check
-        console.log('[background] Not in DB cache, redirecting to scanning page');
-        processingTabs.add(tabId);
-        redirectedTabs.set(tabId, url);
-        const scanningUrl = getExtensionUrl(`scanning.html?url=${encodeURIComponent(url)}&baseDomain=${encodeURIComponent(baseDomain)}`);
-        try {
-          await chrome.tabs.update(tabId, { url: scanningUrl });
-        } catch (error) {
-          console.error('Error redirecting to scanning page:', error);
-        }
-        processingTabs.delete(tabId);
-        return;
-      }
-
-      // Found in DB cache, use it immediately
-      if (dbResult.cached && dbResult.isPhishing !== undefined) {
-        console.log('[background] Found in DB cache:', { 
-          isPhishing: dbResult.isPhishing, 
-          hasWarning: dbResult.hasWarning,
-          cached: true 
-        });
-        
-        // Cache in memory for future use
-        urlCache.set(baseDomain, dbResult);
-        
-        if (dbResult.isPhishing) {
-          // Block if phishing
-          processingTabs.add(tabId);
-          redirectedTabs.set(tabId, url);
-          const blockedUrl = getExtensionUrl(`blocked.html?url=${encodeURIComponent(url)}&reason=${encodeURIComponent(dbResult.reason || 'Phishing site detected')}`);
-          try {
-            await chrome.tabs.update(tabId, { url: blockedUrl });
-          } catch (error) {
-            console.error('Error redirecting to blocked page:', error);
-          }
-          processingTabs.delete(tabId);
-          return;
-        } else if (dbResult.hasWarning) {
-          // Check warning handling
-          const blockWarnings = await getBlockWarningsSetting();
-          if (blockWarnings) {
-            // Block warnings if user setting is enabled
-            processingTabs.add(tabId);
-            redirectedTabs.set(tabId, url);
-            const warningUrl = getExtensionUrl(
-              `warning.html?url=${encodeURIComponent(url)}` +
-              `&warningType=${encodeURIComponent(Array.isArray(dbResult.warningType) ? dbResult.warningType.join(',') : (dbResult.warningType || ''))}` +
-              `&warningSeverity=${encodeURIComponent(dbResult.warningSeverity || 'medium')}` +
-              `&reason=${encodeURIComponent(dbResult.warningReason || dbResult.reason || 'This site has been flagged for potential risks.')}` +
-              `&blocked=true`
-            );
-            try {
-              await chrome.tabs.update(tabId, { url: warningUrl });
-            } catch (error) {
-              console.error('Error redirecting to warning page:', error);
-            }
-            processingTabs.delete(tabId);
-            return;
-          } else {
-            // Allow navigation but show warning banner
-            // Store warning info for content script
-            const warningInfo = {
-              warningType: Array.isArray(dbResult.warningType) ? dbResult.warningType : (dbResult.warningType ? [dbResult.warningType] : []),
-              warningSeverity: dbResult.warningSeverity,
-              warningReason: dbResult.warningReason || dbResult.reason
-            };
-            tabWarnings.set(tabId, warningInfo);
-            
-            chrome.tabs.sendMessage(tabId, {
-              action: 'showWarning',
-              warningType: warningInfo.warningType,
-              warningSeverity: warningInfo.warningSeverity,
-              warningReason: warningInfo.warningReason
-            }).catch(() => {
-              // Content script might not be ready yet, that's okay
-            });
-            redirectedTabs.delete(tabId);
-            return;
-          }
-        } else {
-          // Safe, allow navigation
-          redirectedTabs.delete(tabId);
-          return;
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[background] Error checking DB cache:', error);
-    // On error, fall through to scanning page
-  }
-
-  // Fallback: redirect to scanning page if DB check failed or returned unexpected result
-  console.log('[background] Redirecting to scanning page (fallback)');
+  // Not in memory cache - redirect to the scanning page immediately so the
+  // destination site never renders before the check completes. The scanning
+  // page performs the check (cache or AI) and then routes to the destination,
+  // the blocked page, or the warning page.
+  console.log('[background] Not in memory cache, redirecting to scanning page');
   processingTabs.add(tabId);
   redirectedTabs.set(tabId, url);
   const scanningUrl = getExtensionUrl(`scanning.html?url=${encodeURIComponent(url)}&baseDomain=${encodeURIComponent(baseDomain)}`);
@@ -469,14 +355,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'getApiUrl') {
-    chrome.storage.sync.get(['apiUrl'], (result) => {
-      sendResponse({ apiUrl: result.apiUrl || DEFAULT_API_URL });
+    getCheckUrlEndpoint().then((apiUrl) => {
+      sendResponse({ apiUrl });
     });
     return true;
   }
 
-  if (request.action === 'setApiUrl') {
-    chrome.storage.sync.set({ apiUrl: request.apiUrl }, () => {
+  if (request.action === 'setServerUrl') {
+    chrome.storage.sync.set({ serverUrl: normalizeServerUrl(request.serverUrl) }, () => {
       sendResponse({ success: true });
     });
     return true;

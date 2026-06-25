@@ -4,11 +4,7 @@
   'use strict';
 
   async function getApiUrl() {
-    return new Promise((resolve) => {
-      chrome.storage.sync.get(['apiUrl'], (result) => {
-        resolve(result.apiUrl || DEFAULT_API_URL);
-      });
-    });
+    return getCheckUrlEndpoint();
   }
 
   async function getAuthToken() {

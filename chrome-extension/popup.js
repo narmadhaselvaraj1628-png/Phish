@@ -27,6 +27,17 @@
   const loginError = document.getElementById('loginError');
   const registerError = document.getElementById('registerError');
   const userEmail = document.getElementById('userEmail');
+  const serverUrlInput = document.getElementById('serverUrlInput');
+  const serverUrlError = document.getElementById('serverUrlError');
+  const currentServer = document.getElementById('currentServer');
+  const changeServerBtn = document.getElementById('changeServerBtn');
+
+  // Populate the server URL input and the logged-in server label from storage
+  async function populateServerFields() {
+    const base = await getServerBaseUrl();
+    serverUrlInput.value = base;
+    currentServer.textContent = base;
+  }
 
   // Check auth state on load
   async function checkAuthState() {
@@ -35,7 +46,9 @@
       setTimeout(checkAuthState, 100);
       return;
     }
-    
+
+    await populateServerFields();
+
     const auth = typeof window !== 'undefined' && window.authAPI ? window.authAPI : { isAuthenticated, getUserInfo };
     const isAuth = await auth.isAuthenticated();
     if (isAuth) {
@@ -92,16 +105,45 @@
     });
   });
 
+  // Validate the server URL input and persist it if it changed.
+  // Clears the scan cache on change so we never mix results across servers.
+  // Returns true if the URL is valid (and saved when changed), false otherwise.
+  async function applyServerUrlChange() {
+    serverUrlError.classList.add('hidden');
+    const entered = normalizeServerUrl(serverUrlInput.value);
+
+    if (!isValidServerUrl(entered)) {
+      serverUrlError.textContent = 'Enter a valid server URL (http:// or https://)';
+      serverUrlError.classList.remove('hidden');
+      return false;
+    }
+
+    const current = await getServerBaseUrl();
+    if (entered !== current) {
+      await chrome.storage.sync.set({ serverUrl: entered });
+      // Drop any cached scan results from the previous server
+      chrome.runtime.sendMessage({ action: 'clearCache' });
+      serverUrlInput.value = entered;
+      currentServer.textContent = entered;
+    }
+    return true;
+  }
+
   // Login handler
   loginBtn.addEventListener('click', async () => {
     const email = loginEmail.value.trim();
     const password = loginPassword.value;
     
     loginError.classList.add('hidden');
-    
+
     if (!email || !password) {
       loginError.textContent = 'Please enter email and password';
       loginError.classList.remove('hidden');
+      return;
+    }
+
+    // Persist the server URL (and reset state if it changed) before authenticating
+    if (!(await applyServerUrlChange())) {
       return;
     }
 
@@ -142,6 +184,11 @@
       return;
     }
 
+    // Persist the server URL (and reset state if it changed) before registering
+    if (!(await applyServerUrlChange())) {
+      return;
+    }
+
     try {
       registerBtn.disabled = true;
       registerBtn.textContent = 'Registering...';
@@ -165,6 +212,17 @@
     const auth = typeof window !== 'undefined' && window.authAPI ? window.authAPI : { logout };
     await auth.logout();
     showAuthForms();
+  });
+
+  // Change server handler: changing the server requires a fresh login.
+  changeServerBtn.addEventListener('click', async () => {
+    const auth = typeof window !== 'undefined' && window.authAPI ? window.authAPI : { logout };
+    await auth.logout();
+    // Drop cached scan results tied to the old server
+    chrome.runtime.sendMessage({ action: 'clearCache' });
+    serverUrlError.classList.add('hidden');
+    showAuthForms();
+    serverUrlInput.focus();
   });
 
   // Initialize auth state
@@ -255,11 +313,7 @@
         return null;
       }
 
-      const apiUrl = await new Promise((resolve) => {
-        chrome.storage.sync.get(['apiUrl'], (result) => {
-          resolve(result.apiUrl || DEFAULT_API_URL);
-        });
-      });
+      const apiUrl = await getCheckUrlEndpoint();
 
       // Get auth token (required)
       const authToken = await new Promise((resolve) => {
